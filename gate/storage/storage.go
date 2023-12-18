@@ -21,7 +21,7 @@ type Storage interface {
 
 	// RemoveByIndex удаляет элемент с указанным индексом из хранилища.
 	// Если элемента с таким индексом нет, функция не делает ничего.
-	RemoveByIndex(id int64)
+	RemoveByIndex(id int64) error
 
 	// RemoveByValue удаляет первый найденный элемент с указанным значением из хранилища.
 	// Если элемента с таким значением нет, функция не делает ничего.
@@ -33,7 +33,7 @@ type Storage interface {
 
 	// GetByIndex возвращает значение элемента с указанным индексом.
 	// Если элемента с таким индексом нет, возвращается nil и false.
-	GetByIndex(id int64) (interface{}, bool)
+	GetByIndex(id int64) (interface{}, error)
 
 	// GetByValue возвращает индекс первого найденного элемента с указанным значением.
 	// Если элемента с таким значением нет, возвращается 0 и false.
@@ -53,7 +53,9 @@ type Storage interface {
 	// Print выводит содержимое хранилища в консоль.
 	Print()
 
-	GetAllByValueSelectedFields(value interface{}) (ids []int64)
+	GetAllByValueSelectedFields(value interface{}) []int64
+
+	UpdateByIndex(id int64, value interface{}) error
 }
 
 // ErrMismatchType ошибка, возвращаемая методом Add, если тип добавляемого элемента

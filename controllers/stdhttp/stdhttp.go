@@ -2,7 +2,6 @@ package stdhttp
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	storage "notesServer/gate/storage"
 	"notesServer/models/dto"
@@ -13,35 +12,71 @@ import (
 )
 
 type Controller struct {
-	DB  storage.Storage
-	Srv *http.Server
+	DB     storage.Storage
+	Srv    *http.Server
+	Logger *errorLogger.ErrorLogger
 }
 
-func NewController(addr string, db storage.Storage) *Controller {
+func NewController(addr string, db storage.Storage, logger *errorLogger.ErrorLogger) *Controller {
 
 	controller := &Controller{
 		Srv: &http.Server{
 			Addr: addr,
 		},
-		DB: db,
+		DB:     db,
+		Logger: logger,
 	}
 
 	http.HandleFunc("/add", controller.NoteAdd)
-	http.HandleFunc("/get", controller.NotesGet)
+	http.HandleFunc("/get", controller.NoteGetByID)
 	http.HandleFunc("/update", controller.NoteUpdate)
 	http.HandleFunc("/delete", controller.NoteDeleteByPhone)
+	http.HandleFunc("/configure", controller.NoteConfigure)
 
 	return controller
 }
 
-func (c *Controller) NoteAdd(w http.ResponseWriter, r *http.Request) {
+func (c *Controller) NoteConfigure(w http.ResponseWriter, r *http.Request) {
+	response := dto.Response{}
 
-	// creating logger
-	logger, err := errorLogger.NewErrorLogger(".log")
-	if err != nil {
-		fmt.Println(err)
+	defer responseWriteAndReturn(w, &response)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
 		return
 	}
+
+	config := dto.Config{}
+	err := json.NewDecoder(r.Body).Decode(&config)
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteConfigure(): json.NewDecoder(r.Body).Decode(&note)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
+
+	storageNum, err := strconv.Atoi(config.StorageNum)
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteConfigure(): strconv.Atoi(config.StorageNum)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
+
+	if storageNum == 0 {
+		c.DB = storage.NewMap()
+	} else if storageNum == 1 {
+		c.DB = storage.NewList()
+	} else {
+		err = errors.New("stdhttp.NoteConfigure(): Invalid configure number option, must be 0 or 1")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+	}
+
+	response.Wrap("OK", nil, nil)
+}
+
+func (c *Controller) NoteAdd(w http.ResponseWriter, r *http.Request) {
 
 	response := dto.Response{}
 
@@ -53,36 +88,33 @@ func (c *Controller) NoteAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	note := dto.Note{}
-	err = json.NewDecoder(r.Body).Decode(&note)
+	err := json.NewDecoder(r.Body).Decode(&note)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteAdd()")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteAdd(): json.NewDecoder(r.Body).Decode(&note)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
+
+	if note.AuthorFirstName == "" || note.AuthorLastName == "" || note.Note == "" {
+		err = errors.New("stdhttp.NoteAdd(): Not all Note fields filled")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
 	_, err = c.DB.Add(note)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteAdd()")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteAdd(): c.DB.Add(note)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
 	response.Wrap("OK", nil, nil)
-
-	c.DB.Print()
-
 }
 
-func (c *Controller) NotesGet(w http.ResponseWriter, r *http.Request) {
-
-	// creating logger
-	logger, err := errorLogger.NewErrorLogger(".log")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+func (c *Controller) NoteGetByID(w http.ResponseWriter, r *http.Request) {
 
 	response := dto.Response{}
 
@@ -95,27 +127,36 @@ func (c *Controller) NotesGet(w http.ResponseWriter, r *http.Request) {
 
 	note := dto.Note{}
 
-	err = json.NewDecoder(r.Body).Decode(&note)
+	err := json.NewDecoder(r.Body).Decode(&note)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone()")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteGetByID(): json.NewDecoder(r.Body).Decode(&note)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
-	ids := c.DB.GetAllByValueSelectedFields(note)
-	var notes dto.Notes
-	for _, v := range ids {
-		note, _ := c.DB.GetByIndex(v)
-		noteStruct := note.(dto.Note)
-		notes = append(notes, noteStruct)
+	id, err := strconv.Atoi(note.Id)
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteGetByID(): strconv.Atoi(note.Id)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
 	}
 
-	notesJSON, err := json.Marshal(&notes)
+	noteGet, err := c.DB.GetByIndex(int64(id))
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NotesGet()")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteGetByID(): c.DB.GetByIndex(int64(id))")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
+	noteStruct := noteGet.(dto.Note)
+
+	notesJSON, err := json.Marshal(&noteStruct)
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteGetByID(): json.Marshal(&notes)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
@@ -124,13 +165,6 @@ func (c *Controller) NotesGet(w http.ResponseWriter, r *http.Request) {
 
 func (c *Controller) NoteUpdate(w http.ResponseWriter, r *http.Request) {
 
-	// creating logger
-	logger, err := errorLogger.NewErrorLogger(".log")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	response := dto.Response{}
 
 	defer responseWriteAndReturn(w, &response)
@@ -140,38 +174,57 @@ func (c *Controller) NoteUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	note := dto.Note{}
+	noteRequest := dto.Note{}
 
-	err = json.NewDecoder(r.Body).Decode(&note)
+	err := json.NewDecoder(r.Body).Decode(&noteRequest)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone()")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteUpdate(): json.NewDecoder(r.Body).Decode(&noteRequest)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
-	id := note.Id
+	id := noteRequest.Id
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteUpdate(): strconv.Atoi(id)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
-	c.DB.RemoveByIndex(int64(idInt))
+	noteToUpdateInterface, err := c.DB.GetByIndex(int64(idInt))
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteUpdate(): c.DB.GetByIndex(int64(idInt))")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
+	noteToUpdate := noteToUpdateInterface.(dto.Note)
+
+	if noteRequest.AuthorFirstName != "" {
+		noteToUpdate.AuthorFirstName = noteRequest.AuthorFirstName
+	}
+	if noteRequest.AuthorLastName != "" {
+		noteToUpdate.AuthorLastName = noteRequest.AuthorLastName
+	}
+	if noteRequest.Note != "" {
+		noteToUpdate.Note = noteRequest.Note
+	}
+
+	err = c.DB.UpdateByIndex(int64(idInt), noteToUpdate)
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteUpdate(): c.DB.UpdateByIndex(int64(idInt), noteToUpdate)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
+
 	response.Wrap("OK", nil, nil)
 }
 
 func (c *Controller) NoteDeleteByPhone(w http.ResponseWriter, r *http.Request) {
 
-	// creating logger
-	logger, err := errorLogger.NewErrorLogger(".log")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	response := dto.Response{}
 
 	defer responseWriteAndReturn(w, &response)
@@ -183,24 +236,30 @@ func (c *Controller) NoteDeleteByPhone(w http.ResponseWriter, r *http.Request) {
 
 	note := dto.Note{}
 
-	err = json.NewDecoder(r.Body).Decode(&note)
+	err := json.NewDecoder(r.Body).Decode(&note)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone()")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone(): json.NewDecoder(r.Body).Decode(&note)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
 	id := note.Id
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone")
-		logger.LogError(err)
-		response.ErrorWrap(err)
+		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone(): strconv.Atoi(id)")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
 		return
 	}
 
-	c.DB.RemoveByIndex(int64(idInt))
+	err = c.DB.RemoveByIndex(int64(idInt))
+	if err != nil {
+		err = errors.Wrap(err, "stdhttp.NoteDeleteByPhone(): c.DB.RemoveByIndex(int64(idInt))")
+		c.Logger.LogError(err)
+		response.Wrap("error", nil, err)
+		return
+	}
 	response.Wrap("OK", nil, nil)
 }
 

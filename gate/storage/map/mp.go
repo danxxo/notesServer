@@ -7,6 +7,7 @@ import (
 )
 
 var ErrMismatchType = errors.New("mismatched type: the type of the provided value does not match the type of items already in the storage")
+var OutOfRange = errors.New("Index out of range")
 
 type Mp struct {
 	HashTable map[int64]interface{}
@@ -14,10 +15,7 @@ type Mp struct {
 }
 
 func (myMap *Mp) isEmpty() bool {
-	if myMap.len <= 0 {
-		return true
-	}
-	return false
+	return myMap.len <= 0
 }
 
 func NewMap() *Mp {
@@ -79,12 +77,12 @@ func (myMap *Mp) Print() {
 	fmt.Println("")
 }
 
-func (myMap *Mp) GetByIndex(id int64) (value interface{}, ok bool) {
+func (myMap *Mp) GetByIndex(id int64) (value interface{}, err error) {
 
-	if id >= myMap.len {
-		return 0, false
+	if id >= myMap.len || id < 0 {
+		return 0, OutOfRange
 	}
-	return myMap.HashTable[id], true
+	return myMap.HashTable[id], nil
 }
 
 func (myMap *Mp) GetByValue(value interface{}) (id int64, ok bool) {
@@ -116,21 +114,20 @@ func (myMap *Mp) Add(data interface{}) (int64, error) {
 	return myMap.len - 1, nil
 }
 
-func (myMap *Mp) RemoveByIndex(id int64) {
+func (myMap *Mp) RemoveByIndex(id int64) (err error) {
 
 	if myMap.isEmpty() {
-		fmt.Println("Map is empty")
-		return
+		return nil
 	}
 
-	if id < 0 || id > myMap.len {
-		return
+	if id < 0 || id >= myMap.len {
+		return OutOfRange
 	}
 
 	if id == myMap.len-1 {
 		delete(myMap.HashTable, id)
 		myMap.len--
-		return
+		return nil
 	}
 
 	id += 1
@@ -140,7 +137,7 @@ func (myMap *Mp) RemoveByIndex(id int64) {
 	}
 	delete(myMap.HashTable, myMap.len-1)
 	myMap.len--
-	return
+	return nil
 
 }
 
@@ -175,6 +172,15 @@ func (myMap *Mp) RemoveByValue(value interface{}) {
 			return
 		}
 	}
+}
+
+func (m *Mp) UpdateByIndex(id int64, value interface{}) (err error) {
+	if id < 0 || id >= m.len {
+		return OutOfRange
+	}
+
+	m.HashTable[id] = value
+	return nil
 }
 
 func (m *Mp) GetAllByValueSelectedFields(value interface{}) (ids []int64) {
