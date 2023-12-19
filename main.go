@@ -1,8 +1,9 @@
 package main
 
 import (
+	"flag"
 	controller "notesServer/controllers/stdhttp"
-	"notesServer/gate/storage"
+	Storage "notesServer/gate/storage"
 	errorLogger "notesServer/pkg/errorLogger"
 
 	"fmt"
@@ -10,7 +11,23 @@ import (
 
 func main() {
 
-	storage := storage.NewMap()
+	var storage Storage.Storage
+
+	listFlag := flag.Bool("list", false, "using list as storage")
+	mapFlag := flag.Bool("map", false, "using map as storage")
+
+	flag.Parse()
+
+	if *listFlag {
+		storage = Storage.NewList()
+		fmt.Println("Using list as storage")
+	} else if *mapFlag {
+		storage = Storage.NewMap()
+		fmt.Println("Using mpa as storage")
+	} else {
+		storage = Storage.NewMap()
+		fmt.Println("Using mpa as storage")
+	}
 
 	ADDR := "127.0.0.1:8000"
 

@@ -31,49 +31,8 @@ func NewController(addr string, db storage.Storage, logger *errorLogger.ErrorLog
 	http.HandleFunc("/get", controller.NoteGetByID)
 	http.HandleFunc("/update", controller.NoteUpdate)
 	http.HandleFunc("/delete", controller.NoteDeleteByPhone)
-	http.HandleFunc("/configure", controller.NoteConfigure)
 
 	return controller
-}
-
-func (c *Controller) NoteConfigure(w http.ResponseWriter, r *http.Request) {
-	response := dto.Response{}
-
-	defer responseWriteAndReturn(w, &response)
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
-		return
-	}
-
-	config := dto.Config{}
-	err := json.NewDecoder(r.Body).Decode(&config)
-	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteConfigure(): json.NewDecoder(r.Body).Decode(&note)")
-		c.Logger.LogError(err)
-		response.Wrap("error", nil, err)
-		return
-	}
-
-	storageNum, err := strconv.Atoi(config.StorageNum)
-	if err != nil {
-		err = errors.Wrap(err, "stdhttp.NoteConfigure(): strconv.Atoi(config.StorageNum)")
-		c.Logger.LogError(err)
-		response.Wrap("error", nil, err)
-		return
-	}
-
-	if storageNum == 0 {
-		c.DB = storage.NewMap()
-	} else if storageNum == 1 {
-		c.DB = storage.NewList()
-	} else {
-		err = errors.New("stdhttp.NoteConfigure(): Invalid configure number option, must be 0 or 1")
-		c.Logger.LogError(err)
-		response.Wrap("error", nil, err)
-	}
-
-	response.Wrap("OK", nil, nil)
 }
 
 func (c *Controller) NoteAdd(w http.ResponseWriter, r *http.Request) {
